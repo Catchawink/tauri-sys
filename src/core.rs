@@ -2,7 +2,7 @@
 use serde::{de::DeserializeOwned, Serialize};
 use serde_wasm_bindgen as swb;
 use wasm_bindgen::{prelude::Closure, JsValue};
-
+use log::{info, warn};
 pub use channel::{Channel, Message};
 
 pub async fn invoke<T>(command: &str, args: impl Serialize) -> T
@@ -42,12 +42,13 @@ pub fn convert_file_src_with_protocol(
 mod channel {
     use super::inner;
     use futures::{channel::mpsc, Stream, StreamExt};
+    use log::info;
     use serde::{de::DeserializeOwned, ser::SerializeStruct, Deserialize, Serialize};
     use wasm_bindgen::{prelude::Closure, JsValue};
 
     #[derive(derive_more::Deref, Deserialize, Debug)]
     pub struct Message<T> {
-        id: String,
+        id: usize,
 
         #[deref]
         message: T,
@@ -55,7 +56,7 @@ mod channel {
 
     impl<T> Message<T> {
         pub fn id(&self) -> usize {
-            self.id.parse().unwrap()
+            self.id
         }
     }
 
@@ -73,6 +74,7 @@ mod channel {
         {
             let (tx, rx) = mpsc::unbounded::<Message<T>>();
             let closure = Closure::<dyn FnMut(JsValue)>::new(move |raw| {
+                info!("Raw channel message: {:?}", raw);
                 let _ = tx.unbounded_send(serde_wasm_bindgen::from_value(raw).unwrap());
             });
 

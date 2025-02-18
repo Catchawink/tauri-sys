@@ -47,7 +47,7 @@ mod channel {
 
     #[derive(derive_more::Deref, Deserialize, Debug)]
     pub struct Message<T> {
-        id: usize,
+        id: String,
 
         #[deref]
         message: T,
@@ -55,7 +55,7 @@ mod channel {
 
     impl<T> Message<T> {
         pub fn id(&self) -> usize {
-            self.id
+            self.id.parse().unwrap()
         }
     }
 

@@ -74,7 +74,6 @@ mod channel {
         {
             let (tx, rx) = mpsc::unbounded::<Message<T>>();
             let closure = Closure::<dyn FnMut(JsValue)>::new(move |raw| {
-                info!("Raw channel message: {:?}", raw);
                 let _ = tx.unbounded_send(serde_wasm_bindgen::from_value(raw).unwrap());
             });
 

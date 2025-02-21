@@ -10,6 +10,7 @@ where
     T: DeserializeOwned,
 {
     let value = inner::invoke(command, swb::to_value(&args).unwrap()).await;
+    info!("Invoke response: {:?}", value);
     swb::from_value(value).unwrap()
 }
 

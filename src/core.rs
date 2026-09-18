@@ -1,28 +1,39 @@
 //! Common functionality
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_wasm_bindgen as swb;
+<<<<<<< HEAD
 use wasm_bindgen::{prelude::Closure, JsValue};
 use log::{info, warn};
-pub use channel::{Channel, Message};
+=======
 
+>>>>>>> upstream/v2
+pub use channel::{Channel, Message};
+pub use resource::Resource;
+
+#[cfg_attr(feature = "nightly", track_caller)]
 pub async fn invoke<T>(command: &str, args: impl Serialize) -> T
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + 'static,
 {
     let value = inner::invoke(command, swb::to_value(&args).unwrap()).await;
+<<<<<<< HEAD
     info!("Invoke response: {:?}", value);
     swb::from_value(value).unwrap()
+=======
+    crate::from_value(value).unwrap()
+>>>>>>> upstream/v2
 }
 
+#[cfg_attr(feature = "nightly", track_caller)]
 pub async fn invoke_result<T, E>(command: &str, args: impl Serialize) -> Result<T, E>
 where
-    T: DeserializeOwned,
-    E: DeserializeOwned,
+    T: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
 {
     inner::invoke_result(command, swb::to_value(&args).unwrap())
         .await
-        .map(|val| swb::from_value(val).unwrap())
-        .map_err(|err| swb::from_value(err).unwrap())
+        .map(|val| crate::from_value(val).unwrap())
+        .map_err(|err| crate::from_value(err).unwrap())
 }
 
 pub fn convert_file_src(file_path: impl AsRef<str>) -> String {
@@ -40,32 +51,85 @@ pub fn convert_file_src_with_protocol(
         .unwrap()
 }
 
+pub fn is_tauri() -> bool {
+    inner::is_tauri()
+}
+
+mod resource {
+    use super::invoke;
+    use serde::Serialize;
+
+    #[derive(Clone)]
+    /// A Rust backed resource.
+    pub struct Resource {
+        rid: u64,
+    }
+
+    impl Resource {
+        pub fn new(rid: u64) -> Self {
+            Self { rid }
+        }
+
+        pub fn rid(&self) -> u64 {
+            self.rid
+        }
+
+        /// Destroy the resource.
+        pub async fn close(self) {
+            #[derive(Serialize)]
+            struct Args {
+                rid: u64,
+            }
+
+            invoke::<()>("plugin:resources|close", Args { rid: self.rid }).await;
+        }
+    }
+}
+
 mod channel {
     use super::inner;
+<<<<<<< HEAD
     use futures::{channel::mpsc, Stream, StreamExt};
     use log::info;
     use serde::{de::DeserializeOwned, ser::SerializeStruct, Deserialize, Serialize};
     use wasm_bindgen::{prelude::Closure, JsValue};
+=======
+    use futures::{Stream, StreamExt, channel::mpsc};
+    use send_wrapper::SendWrapper;
+    use serde::{Deserialize, Serialize, de::DeserializeOwned};
+    use wasm_bindgen::{JsValue, prelude::Closure};
+>>>>>>> upstream/v2
 
     #[derive(derive_more::Deref, Deserialize, Debug)]
     pub struct Message<T> {
-        id: usize,
+        index: usize,
+        end: Option<bool>,
 
         #[deref]
-        message: T,
+        message: Option<T>,
     }
 
     impl<T> Message<T> {
-        pub fn id(&self) -> usize {
-            self.id
+        pub fn index(&self) -> usize {
+            self.index
+        }
+
+        /// # Returns
+        /// If the message's `end` property was set to `true`.
+        /// i.e. Is `Some(true)`.
+        pub fn end(&self) -> bool {
+            match self.end {
+                Some(true) => true,
+                _ => false,
+            }
         }
     }
 
-    // TODO: Could cause memory leak because handler is never released.
     #[derive(Debug)]
     pub struct Channel<T> {
         id: usize,
         rx: mpsc::UnboundedReceiver<Message<T>>,
+        _id_keep_alive: SendWrapper<Closure<dyn FnMut(JsValue)>>,
     }
 
     impl<T> Channel<T> {
@@ -75,13 +139,16 @@ mod channel {
         {
             let (tx, rx) = mpsc::unbounded::<Message<T>>();
             let closure = Closure::<dyn FnMut(JsValue)>::new(move |raw| {
-                let _ = tx.unbounded_send(serde_wasm_bindgen::from_value(raw).unwrap());
+                let _ = tx.unbounded_send(crate::from_value(raw).unwrap());
             });
 
             let id = inner::transform_callback(&closure, false);
-            closure.forget();
 
-            Channel { id, rx }
+            Channel {
+                id,
+                rx,
+                _id_keep_alive: SendWrapper::new(closure),
+            }
         }
 
         pub fn id(&self) -> usize {
@@ -105,17 +172,25 @@ mod channel {
             mut self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<Option<Self::Item>> {
-            self.rx
-                .poll_next_unpin(cx)
-                .map(|item| item.map(|value| value.message))
+            if let std::task::Poll::Ready(Some(item)) = self.rx.poll_next_unpin(cx) {
+                if item.end() {
+                    // TODO: Delete channel from `window`.
+                    // See `core.ts > class Channel > private cleanupCallback`.
+                    std::task::Poll::Ready(None)
+                } else {
+                    std::task::Poll::Ready(item.message)
+                }
+            } else {
+                std::task::Poll::Pending
+            }
         }
     }
 }
 
 mod inner {
     use wasm_bindgen::{
-        prelude::{wasm_bindgen, Closure},
         JsValue,
+        prelude::{Closure, wasm_bindgen},
     };
 
     #[wasm_bindgen(module = "/src/core.js")]
@@ -127,5 +202,7 @@ mod inner {
         pub fn convert_file_src(filePath: &str, protocol: &str) -> JsValue;
         #[wasm_bindgen(js_name = "transformCallback")]
         pub fn transform_callback(callback: &Closure<dyn FnMut(JsValue)>, once: bool) -> usize;
+        #[wasm_bindgen(js_name = "isTauri")]
+        pub fn is_tauri() -> bool;
     }
 }

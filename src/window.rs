@@ -7,15 +7,12 @@ use crate::{
     event::{self, Event},
 };
 use futures::{
-    channel::{
-        mpsc::{self, UnboundedSender},
-        oneshot,
-    },
-    Future, FutureExt, Stream, StreamExt,
+    Stream, StreamExt,
+    channel::mpsc::{self, UnboundedSender},
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{any::Any, collections::HashMap, path::PathBuf};
-use wasm_bindgen::{prelude::Closure, JsValue};
+use wasm_bindgen::{JsValue, prelude::Closure};
 
 /// Events that are emitted right here instead of by the created window.
 const LOCAL_TAURI_EVENTS: &'static [&'static str; 2] = &["tauri://created", "tauri://error"];
@@ -59,6 +56,7 @@ pub(crate) struct DragDropListen {
     pub unlisten_drop: js_sys::Function,
     pub unlisten_over: js_sys::Function,
     pub unlisten_leave: js_sys::Function,
+    _keep_alives: [Closure<dyn FnMut(JsValue)>; 4],
 }
 
 impl Drop for DragDropListen {
@@ -139,7 +137,7 @@ impl Window {
     /// Create a new Window.
     ///
     /// # Arguments
-    /// + `label`: Unique window label. Must be alphanumberic: `a-zA-Z-/:_`.
+    /// + `label`: Unique window label. Must be alphanumeric: `a-zA-Z-/:_`.
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
@@ -148,8 +146,8 @@ impl Window {
     }
 
     /// Gets the Window associated with the given label.
-    pub fn get_by_label(label: impl AsRef<str>) -> Option<Self> {
-        js_sys::try_iter(&inner::get_all())
+    pub async fn get_by_label(label: impl AsRef<str>) -> Option<Self> {
+        js_sys::try_iter(&inner::get_all().await)
             .unwrap()
             .unwrap()
             .into_iter()
@@ -169,8 +167,8 @@ impl Window {
     }
 
     /// Gets a list of instances of `Window` for all available windows.
-    pub fn get_all() -> Vec<Self> {
-        get_all()
+    pub async fn get_all() -> Vec<Self> {
+        get_all().await
     }
 }
 
@@ -223,11 +221,12 @@ impl Window {
         use futures::future::Either;
 
         let event = event.into();
+        let label = self.label.clone();
         if let Some(listener) = self.handle_tauri_event(event.clone()) {
             Ok(Either::Left(listener))
         } else {
             let listener =
-                event::listen_to(&event, event::EventTarget::Window(self.label.clone())).await?;
+                event::listen_to(event.as_str(), event::EventTarget::Window(label)).await?;
 
             Ok(Either::Right(listener))
         }
@@ -242,7 +241,7 @@ impl Window {
     /// # Returns
     /// A promise resolving to a function to unlisten to the event.
     /// Note that removing the listener is required if your listener goes out of scope e.g. the component is unmounted.
-    pub async fn once(&self, event: impl Into<String>, handler: Closure<dyn FnMut(JsValue)>) {
+    pub async fn once(&self, _event: impl Into<String>, _handler: Closure<dyn FnMut(JsValue)>) {
         todo!();
     }
 
@@ -332,11 +331,11 @@ impl Window {
     ) -> crate::Result<impl Stream<Item = Event<DragDropEvent>>> {
         let (tx, rx) = mpsc::unbounded::<Event<DragDropEvent>>();
 
-        let closure = {
+        let enter_closure = {
             let tx = tx.clone();
             Closure::<dyn FnMut(JsValue)>::new(move |raw| {
                 let Event { event, id, payload } =
-                    serde_wasm_bindgen::from_value::<Event<DragDropPayload>>(raw).unwrap();
+                    crate::from_value::<Event<DragDropPayload>>(raw).unwrap();
                 let _ = tx.unbounded_send(Event {
                     event,
                     id,
@@ -346,21 +345,20 @@ impl Window {
         };
         let unlisten = event::inner::listen(
             event::DRAG_ENTER,
-            &closure,
+            &enter_closure,
             serde_wasm_bindgen::to_value(&event::Options {
                 target: event::EventTarget::Window(self.label.clone()),
             })?,
         )
         .await?;
-        closure.forget();
 
         let unlisten_enter = js_sys::Function::from(unlisten);
 
-        let closure = {
+        let drop_closure = {
             let tx = tx.clone();
             Closure::<dyn FnMut(JsValue)>::new(move |raw| {
                 let Event { event, id, payload } =
-                    serde_wasm_bindgen::from_value::<Event<DragDropPayload>>(raw).unwrap();
+                    crate::from_value::<Event<DragDropPayload>>(raw).unwrap();
                 let _ = tx.unbounded_send(Event {
                     event,
                     id,
@@ -370,21 +368,20 @@ impl Window {
         };
         let unlisten = event::inner::listen(
             event::DRAG_DROP,
-            &closure,
+            &drop_closure,
             serde_wasm_bindgen::to_value(&event::Options {
                 target: event::EventTarget::Window(self.label.clone()),
             })?,
         )
         .await?;
-        closure.forget();
 
         let unlisten_drop = js_sys::Function::from(unlisten);
 
-        let closure = {
+        let over_closure = {
             let tx = tx.clone();
             Closure::<dyn FnMut(JsValue)>::new(move |raw| {
                 let Event { event, id, payload } =
-                    serde_wasm_bindgen::from_value::<Event<DragOverPayload>>(raw).unwrap();
+                    crate::from_value::<Event<DragOverPayload>>(raw).unwrap();
                 let _ = tx.unbounded_send(Event {
                     event,
                     id,
@@ -394,21 +391,19 @@ impl Window {
         };
         let unlisten = event::inner::listen(
             event::DRAG_OVER,
-            &closure,
+            &over_closure,
             serde_wasm_bindgen::to_value(&event::Options {
                 target: event::EventTarget::Window(self.label.clone()),
             })?,
         )
         .await?;
-        closure.forget();
 
         let unlisten_over = js_sys::Function::from(unlisten);
 
-        let closure = {
+        let leave_closure = {
             let tx = tx.clone();
             Closure::<dyn FnMut(JsValue)>::new(move |raw| {
-                let Event { event, id, .. } =
-                    serde_wasm_bindgen::from_value::<Event<()>>(raw).unwrap();
+                let Event { event, id, .. } = crate::from_value::<Event<()>>(raw).unwrap();
                 let _ = tx.unbounded_send(Event {
                     event,
                     id,
@@ -418,13 +413,12 @@ impl Window {
         };
         let unlisten = event::inner::listen(
             event::DRAG_LEAVE,
-            &closure,
+            &leave_closure,
             serde_wasm_bindgen::to_value(&event::Options {
                 target: event::EventTarget::Window(self.label.clone()),
             })?,
         )
         .await?;
-        closure.forget();
 
         let unlisten_leave = js_sys::Function::from(unlisten);
 
@@ -434,6 +428,7 @@ impl Window {
             unlisten_drop,
             unlisten_over,
             unlisten_leave,
+            _keep_alives: [enter_closure, drop_closure, over_closure, leave_closure],
         })
     }
 }
@@ -477,16 +472,17 @@ pub fn get_current() -> Window {
     Window::new(label)
 }
 
-pub fn get_all() -> Vec<Window> {
-    js_sys::try_iter(&inner::get_all())
-        .unwrap()
-        .unwrap()
-        .into_iter()
-        .map(|value| {
-            let WindowLabel { label } = serde_wasm_bindgen::from_value(value.unwrap()).unwrap();
-            Window::new(label)
-        })
-        .collect()
+pub async fn get_all() -> Vec<Window> {
+    match js_sys::try_iter(&inner::get_all().await).unwrap() {
+        None => vec![],
+        Some(windows) => windows
+            .into_iter()
+            .map(|value| {
+                let WindowLabel { label } = serde_wasm_bindgen::from_value(value.unwrap()).unwrap();
+                Window::new(label)
+            })
+            .collect(),
+    }
 }
 
 /// # Returns
@@ -549,14 +545,14 @@ pub async fn available_monitors() -> Vec<Monitor> {
 //}
 
 mod inner {
-    use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+    use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 
     #[wasm_bindgen(module = "/src/window.js")]
     extern "C" {
         #[wasm_bindgen(js_name = "getCurrent")]
         pub fn get_current() -> JsValue;
         #[wasm_bindgen(js_name = "getAll")]
-        pub fn get_all() -> JsValue;
+        pub async fn get_all() -> JsValue;
         #[wasm_bindgen(js_name = "currentMonitor")]
         pub async fn current_monitor() -> JsValue;
         #[wasm_bindgen(js_name = "primaryMonitor")]

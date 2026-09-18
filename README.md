@@ -21,9 +21,7 @@
 This crate is not yet published to crates.io, so you need to use it from git. You also need a global installation of [`esbuild`].
 
 ```toml
-tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys" } // tauri v1 api, main repo
-// OR
-tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys", branch = "v2" } // tauri v2 api
+tauri-sys = { git = "https://github.com/JonasKruckenberg/tauri-sys" } // tauri v2 api
 ```
 
 ## Usage
@@ -51,20 +49,22 @@ fn main() {
 All modules are gated by accordingly named Cargo features. It is recommended you keep this synced with the features enabled in your [Tauri Allowlist] but no automated tool for this exists (yet).
 
 - **all**: Enables all modules.
-- **core**: Enables the `core` module. (~70% implmented)
+- **core**: Enables the `core` module. (~70% implemented)
 - **event**: Enables the `event` module.
 - **menu**: Enables the `menu` module. (~20% implemented)
 - **window**: Enables the `windows` module. (~20% implemented)
+
+- **nightly**: Enable nightly only features such as tracker calling for `invoke` for better error reporting.
 
 ## Are we Tauri yet?
 
 These API bindings are not completely on-par with `@tauri-apps/api` yet, but here is the current status-quo:
 
-- [ ] `app`
+- [x] `app`
 - [x] `core` (partial implementation)
 - [x] `dpi`
 - [x] `event`
-- [ ] `image`
+- [x] `image`
 - [x] `menu` (partial implementation)
 - [ ] `mocks`
 - [ ] `path`

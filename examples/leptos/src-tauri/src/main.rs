@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 fn main() {
     logging::enable();
@@ -16,7 +16,7 @@ fn trigger_listen_events(app: tauri::AppHandle) {
     tracing::debug!("trigger_listen_event");
     std::thread::spawn({
         move || {
-            for i in 1..=100 {
+            for i in 1..=20 {
                 app.emit("event::listen", i).unwrap();
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
@@ -25,7 +25,7 @@ fn trigger_listen_events(app: tauri::AppHandle) {
 }
 
 mod logging {
-    use tracing_subscriber::{filter::LevelFilter, fmt, prelude::*, Layer, Registry};
+    use tracing_subscriber::{Layer, Registry, filter::LevelFilter, fmt, prelude::*};
 
     const MAX_LOG_LEVEL: LevelFilter = LevelFilter::DEBUG;
 

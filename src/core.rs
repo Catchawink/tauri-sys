@@ -1,12 +1,6 @@
 //! Common functionality
 use serde::{Serialize, de::DeserializeOwned};
 use serde_wasm_bindgen as swb;
-<<<<<<< HEAD
-use wasm_bindgen::{prelude::Closure, JsValue};
-use log::{info, warn};
-=======
-
->>>>>>> upstream/v2
 pub use channel::{Channel, Message};
 pub use resource::Resource;
 
@@ -16,12 +10,7 @@ where
     T: DeserializeOwned + 'static,
 {
     let value = inner::invoke(command, swb::to_value(&args).unwrap()).await;
-<<<<<<< HEAD
-    info!("Invoke response: {:?}", value);
-    swb::from_value(value).unwrap()
-=======
     crate::from_value(value).unwrap()
->>>>>>> upstream/v2
 }
 
 #[cfg_attr(feature = "nightly", track_caller)]
@@ -88,17 +77,10 @@ mod resource {
 
 mod channel {
     use super::inner;
-<<<<<<< HEAD
-    use futures::{channel::mpsc, Stream, StreamExt};
-    use log::info;
-    use serde::{de::DeserializeOwned, ser::SerializeStruct, Deserialize, Serialize};
-    use wasm_bindgen::{prelude::Closure, JsValue};
-=======
     use futures::{Stream, StreamExt, channel::mpsc};
     use send_wrapper::SendWrapper;
     use serde::{Deserialize, Serialize, de::DeserializeOwned};
     use wasm_bindgen::{JsValue, prelude::Closure};
->>>>>>> upstream/v2
 
     #[derive(derive_more::Deref, Deserialize, Debug)]
     pub struct Message<T> {
